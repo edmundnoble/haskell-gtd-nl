@@ -43,7 +43,7 @@ import Distribution.Simple.PackageIndex (allPackages)
 import Distribution.Simple.Program (defaultProgramDb)
 import Distribution.Types.ComponentRequestedSpec (ComponentRequestedSpec (OneComponentRequestedSpec))
 import Distribution.Types.CondTree (CondTree (CondNode, condTreeData))
-import Distribution.Verbosity (Verbosity)
+import Distribution.Verbosity
 import qualified GHC.Data.FastString as GHC
 import qualified GHC.Data.StringBuffer as GHC
 import qualified GHC.Driver.Config.Parser as GHC
@@ -259,8 +259,8 @@ parseHeader file = do
 cabal :: String -> String -> String -> IO ()
 cabal fileP fileC root = do
   let Right (v :: Verbosity) = eitherParsec "normal"
-  Right r <- findProjectRoot (Just root) Nothing
-  let ddl = defaultDistDirLayout r Nothing
+  Right r <- findProjectRoot silent (Just root) Nothing
+  let ddl = defaultDistDirLayout r Nothing Nothing
   http <- configureTransport v [] (Just "curl")
 
   CondNode {condTreeData = pc} <- runRebuild root $ readProjectConfig v http NoFlag NoFlag ddl

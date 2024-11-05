@@ -10,6 +10,7 @@ module GTD.Resolution.Utils (scheme, parallelized, reverseDependencies, Parallel
 import Control.Concurrent.Async.Lifted (Async, async, wait)
 import Control.Concurrent.MVar.Lifted
 import Control.Lens (makeLenses, use, (%=), (.=))
+import Control.Monad(mapAndUnzipM, when)
 import Control.Monad.Logger (MonadLoggerIO)
 import Control.Monad.RWS (MonadState (get))
 import Control.Monad (mapAndUnzipM, when)

@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-missing-fields #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module GTD.Haskell.Parser.GhcLibParser where
 
@@ -23,7 +24,7 @@ import GHC.Data.StringBuffer (stringToStringBuffer)
 import GHC.Driver.Config.Parser (initParserOpts)
 import GHC.Driver.Session (DynFlags (..), PlatformMisc (..), Settings (..), defaultDynFlags, parseDynamicFilePragma)
 import GHC.Fingerprint (fingerprint0)
-import GHC.Hs (ConDecl (..), ConDeclField (..), DataDefnCons (..), FamilyDecl (..), FieldOcc (..), GhcPs, HsConDetails (..), HsDataDefn (..), HsDecl (..), HsModule (..), IE (..), IEWrappedName (..), ImportDecl (..), ImportDeclQualifiedStyle (..), ImportListInterpretation (..), IsBootInterface (..), ModuleName (ModuleName), Sig (..), SrcSpanAnn' (..), SrcSpanAnnN, TyClDecl (..), moduleNameString)
+import GHC.Hs (ConDecl (..), ConDeclField (..), DataDefnCons (..), FamilyDecl (..), FieldOcc (..), GhcPs, HsConDetails (..), HsDataDefn (..), HsDecl (..), HsModule (..), IE (..), IEWrappedName (..), ImportDecl (..), ImportDeclQualifiedStyle (..), ImportListInterpretation (..), IsBootInterface (..), ModuleName (ModuleName), Sig (..), SrcSpanAnnN, TyClDecl (..), moduleNameString, HasLoc(..))
 import GHC.Parser (parseHeader, parseIdentifier, parseModule)
 import GHC.Parser.Header (getOptions)
 import GHC.Parser.Lexer (P (unP), PState (..), ParseResult (..), initParserState)
@@ -33,7 +34,7 @@ import GHC.Settings.Config (cProjectVersion)
 import GHC.Types.Name (HasOccName (..), occNameString)
 import GHC.Types.Name.Reader (RdrName (..))
 import GHC.Types.SourceError (SourceError)
-import GHC.Types.SrcLoc (GenLocated (..), RealSrcSpan (srcSpanFile), SrcSpan (..), mkRealSrcLoc, srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine, unLoc)
+import GHC.Types.SrcLoc (GenLocated (..), RealSrcSpan (srcSpanFile), SrcSpan (..), mkRealSrcLoc, srcSpanEndCol, srcSpanEndLine, srcSpanStartCol, srcSpanStartLine, unLoc, getLoc)
 import qualified GHC.Unit.Types as GenModule
 import GHC.Utils.Outputable (Outputable (..), SDocContext (..), defaultSDocContext, renderWithContext)
 import GTD.Cabal.Types (ModuleNameS)
@@ -119,7 +120,7 @@ declS :: String -> String -> Declaration
 declS m k = Declaration {_declSrcOrig = emptySourceSpan, _declModule = m, _declName = k}
 
 identifiers :: HsModuleX -> (MonadWriter Declarations m, MonadLoggerIO m) => m ()
-identifiers (HsModuleX HsModule {hsmodName = Just (L (SrcSpanAnn _ _) (ModuleName nF)), hsmodDecls = decls} _) = do
+identifiers (HsModuleX HsModule {hsmodName = Just (L _ (ModuleName nF)), hsmodDecls = decls} _) = do
   let mN = unpackFS nF
   let decl = declM mN
   let tellD l k = tell mempty {_decls = asDeclsMap [decl l k]}
@@ -128,30 +129,30 @@ identifiers (HsModuleX HsModule {hsmodName = Just (L (SrcSpanAnn _ _) (ModuleNam
   forM_ decls $ \(L _ d) -> case d of
     SigD _ s -> case s of
       TypeSig _ names _ -> do
-        forM_ names $ \(L (SrcSpanAnn _ l) k) -> tellD l k
+        forM_ names $ \(L (getHasLoc -> l) k) -> tellD l k
       _ -> return ()
     TyClD _ tc -> case tc of
-      FamDecl {tcdFam = FamilyDecl {fdLName = (L (SrcSpanAnn _ l) k)}} -> tellC l k mempty -- TODO: add more stuff?
-      SynDecl {tcdLName = (L (SrcSpanAnn _ l) k)} -> tellC l k mempty
-      DataDecl {tcdLName = (L (SrcSpanAnn _ l) k), tcdDataDefn = (HsDataDefn _ _ _ _ ctorsD _)} -> do
+      FamDecl {tcdFam = FamilyDecl {fdLName = (L (getHasLoc -> l) k)}} -> tellC l k mempty -- TODO: add more stuff?
+      SynDecl {tcdLName = (L (getHasLoc -> l) k)} -> tellC l k mempty
+      DataDecl {tcdLName = (L (getHasLoc -> l) k), tcdDataDefn = (HsDataDefn _ _ _ _ ctorsD _)} -> do
         let ctors = case ctorsD of
               NewTypeCon a -> [a]
               DataTypeCons _ as -> as
         let fs = flip concatMap ctors $ \(L _ ctor) -> case ctor of
-              ConDeclH98 {con_name = (L (SrcSpanAnn _ loc1) k1), con_args = ctor1} -> do
+              ConDeclH98 {con_name = (L (getHasLoc -> loc1) k1), con_args = ctor1} -> do
                 let fields = case ctor1 of
                       PrefixCon _ _ -> []
                       InfixCon _ _ -> []
                       RecCon (L _ fs1) -> flip concatMap fs1 $ \(L _ (ConDeclField _ fs2 _ _)) ->
-                        flip fmap fs2 $ \(L _ (FieldOcc _ (L (SrcSpanAnn _ loc2) k2))) ->
+                        flip fmap fs2 $ \(L _ (FieldOcc _ (L (getHasLoc -> loc2) k2))) ->
                           decl loc2 k2
                 fields ++ [decl loc1 k1]
               _ -> []
         tellC l k (asDeclsMap fs)
-      ClassDecl {tcdLName = (L (SrcSpanAnn _ l) k), tcdSigs = ms} -> do
+      ClassDecl {tcdLName = (L (getHasLoc -> l) k), tcdSigs = ms} -> do
         let fs = flip concatMap ms $ \(L _ m) -> case m of
-              TypeSig _ names _ -> flip fmap names $ \(L (SrcSpanAnn _ l) k) -> decl l k
-              ClassOpSig _ _ names _ -> flip fmap names $ \(L (SrcSpanAnn _ l) k) -> decl l k
+              TypeSig _ names _ -> flip fmap names $ \(L (getHasLoc -> l) k) -> decl l k
+              ClassOpSig _ _ names _ -> flip fmap names $ \(L (getHasLoc -> l) k) -> decl l k
               _ -> []
         tellC l k (asDeclsMap fs)
     _ -> return ()
@@ -177,19 +178,19 @@ ie _ (IEModuleContents _ (L _ n)) = modify $ Map.insertWith (<>) (moduleNameStri
 ie mN e = do
   let decl = declS mN
       mn = case e of
-        IEVar _ (L _ n) -> ieName n
-        IEThingAbs _ (L _ n) -> ieName n
-        IEThingAll _ (L _ n) -> ieName n
-        IEThingWith _ (L _ n) _ _ -> ieName n
+        IEVar _ (L _ n) _ -> ieName n
+        IEThingAbs _ (L _ n) _ -> ieName n
+        IEThingAll _ (L _ n) _ -> ieName n
+        IEThingWith _ (L _ n) _ _ _ -> ieName n
         _ -> Nothing
   case mn >>= rdr of
     Nothing -> return mempty
     Just (m, n) -> do
       z <- case e of
-        IEVar _ _ -> return mempty {_mDecls = [decl n]}
-        IEThingAbs _ _ -> return mempty {_mCDs = [ClassOrData {_cdtName = decl n, _cdtFields = mempty, _eWildcard = False}]}
-        IEThingAll _ _ -> return mempty {_mCDs = [ClassOrData {_cdtName = decl n, _cdtFields = mempty, _eWildcard = True}]}
-        IEThingWith _ _ _ ns -> do
+        IEVar _ _ _ -> return mempty {_mDecls = [decl n]}
+        IEThingAbs _ _ _ -> return mempty {_mCDs = [ClassOrData {_cdtName = decl n, _cdtFields = mempty, _eWildcard = False}]}
+        IEThingAll _ _ _ -> return mempty {_mCDs = [ClassOrData {_cdtName = decl n, _cdtFields = mempty, _eWildcard = True}]}
+        IEThingWith _ _ _ ns _ -> do
           let ns1 = mapMaybe ((ieName >=> rdr) . unLoc) ns
           return mempty {_mCDs = [ClassOrData {_cdtName = decl n, _cdtFields = asDeclsMap $ decl . snd <$> ns1, _eWildcard = False}]}
         _ -> return mempty
@@ -237,7 +238,7 @@ identifierUsages (HsModuleX m@HsModule {} _) = do
       c = listify $ \(_ :: GenLocated l RdrName) -> True
 
   let ids = c m
-  flip mapMaybe ids $ \(L (SrcSpanAnn _ l) n) -> do
+  flip mapMaybe ids $ \(L (getHasLoc -> l) n) -> do
     (mN, nN) <- rdr n
     return $ IdentifierUsage {_iuName = nN, _iuModule = mN, _iuSourceSpan = asSourceSpan l}
 
@@ -254,5 +255,5 @@ identifier c = do
       r = unP parseIdentifier parseState
 
   case r of
-    POk _ (L (SrcSpanAnn _ l) e) -> (asSourceSpan l,) <$> rdr e
-    PFailed _ -> Nothing
+      POk _ (L (getHasLoc -> l) e) -> (asSourceSpan l,) <$> rdr e
+      PFailed _ -> Nothing

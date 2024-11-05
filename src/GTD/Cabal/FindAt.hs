@@ -21,6 +21,7 @@ import Distribution.Client.RebuildMonad (runRebuild)
 import Distribution.Parsec (eitherParsec)
 import Distribution.Simple.Flag (Flag (..))
 import Distribution.Types.CondTree (CondTree (CondNode, condTreeData))
+import Distribution.Verbosity
 import GTD.Cabal.Parse (parse)
 import GTD.Cabal.Types (PackageWithUnresolvedDependencies)
 import GTD.Configuration (GTDConfiguration (..))
@@ -69,8 +70,8 @@ findAt'cabalProject wd = do
         logDebugNSS logTag $ printf "error: %s" (show e)
         throwError e
 
-  r <- liftIO (findProjectRoot (Just wd) Nothing) >>= either (handleError . show) return
-  let ddl = defaultDistDirLayout r Nothing
+  r <- liftIO (findProjectRoot silent (Just wd) Nothing) >>= either (handleError . show) return
+  let ddl = defaultDistDirLayout r Nothing Nothing
   v <- either handleError return $ eitherParsec "normal"
   http <- liftIO $ configureTransport v [] (Just "curl")
   CondNode {condTreeData = pc} <- liftIO $ runRebuild wd $ readProjectConfig v http NoFlag NoFlag ddl
